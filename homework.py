@@ -16,7 +16,7 @@ PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('CHAT_ID')
 
-RETRY_TIME = 600
+TELEGRAM_RETRY_TIME = 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 
@@ -42,72 +42,68 @@ def send_message(bot, message):
     try:
         bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
         logger.info('Сообщение в чат отправлено')
-    except exceptions.SendMessageFailure:
+    except telegram.error.TelegramError:
         logger.error('Сбой при отправке сообщения в чат')
 
 
 def get_api_answer(current_timestamp):
-    """Делает запрос к эндпоинту."""
+    """Делает запрос к единственному эндпоинту API-сервиса.
+    В случае успешного запроса должна вернуть ответ API,
+    преобразовав его из формата JSON к типам данных Python.
+    """
     timestamp = current_timestamp
     params = {'from_date': timestamp}
     try:
         response = requests.get(ENDPOINT, headers=HEADERS, params=params)
-    except exceptions.APIResponseStatusCodeException:
-        logger.error('Сбой при запросе к эндпоинту')
+    except Exception as error:
+        logging.error(f'Ошибка при запросе к основному API: {error}')
+        raise Exception(f'Ошибка при запросе к основному API: {error}')
     if response.status_code != HTTPStatus.OK:
-        msg = 'Сбой при запросе к эндпоинту'
-        logger.error(msg)
-        raise exceptions.APIResponseStatusCodeException(msg)
-    return response.json()
+        status_code = response.status_code
+        logging.error(f'Ошибка {status_code}')
+        raise Exception(f'Ошибка {status_code}')
+    try:
+        return response.json()
+    except ValueError:
+        logger.error('Ошибка парсинга ответа из формата json')
+        raise ValueError('Ошибка парсинга ответа из формата json')
 
 
 def check_response(response):
     """Проверяет ответ API на корректность."""
+    if type(response) is not dict:
+        raise TypeError('Ответ API отличен от словаря')
     try:
         homeworks_list = response['homeworks']
-    except KeyError as e:
-        msg = f'Ошибка доступа по ключу homeworks: {e}'
-        logger.error(msg)
-        raise exceptions.CheckResponseException(msg)
-    if homeworks_list is None:
-        msg = 'В ответе API нет словаря с домашками'
-        logger.error(msg)
-        raise exceptions.CheckResponseException(msg)
-    if len(homeworks_list) == 0:
-        msg = 'За последнее время нет домашек'
-        logger.error(msg)
-        raise exceptions.CheckResponseException(msg)
-    if not isinstance(homeworks_list, list):
-        msg = 'В ответе API домашки представлены не списком'
-        logger.error(msg)
-        raise exceptions.CheckResponseException(msg)
-    return homeworks_list
+    except KeyError:
+        logger.error('Ошибка словаря по ключу homeworks')
+        raise KeyError('Ошибка словаря по ключу homeworks')
+    try:
+        homework = homeworks_list[0]
+    except IndexError:
+        logger.error('Список домашних работ пуст')
+        raise IndexError('Список домашних работ пуст')
+    return homework
 
 
 def parse_status(homework):
     """Извлекает из информации о домашке ее статус."""
-    try:
-        homework_name = homework.get('homework_name')
-    except KeyError as e:
-        msg = f'Ошибка доступа по ключу homework_name: {e}'
-        logger.error(msg)
-    try:
-        homework_status = homework.get('status')
-    except KeyError as e:
-        msg = f'Ошибка доступа по ключу status: {e}'
-        logger.error(msg)
-
+    if 'homework_name' not in homework:
+        raise KeyError('Отсутствует ключ "homework_name" в ответе API')
+    if 'status' not in homework:
+        raise Exception('Отсутствует ключ "status" в ответе API')
+    homework_name = homework['homework_name']
+    homework_status = homework['status']
+    if homework_status not in HOMEWORK_VERDICTS:
+        raise Exception(f'Неизвестный статус работы: {homework_status}')
     verdict = HOMEWORK_VERDICTS[homework_status]
-    if verdict is None:
-        msg = 'Неизвестный статус домашки'
-        logger.error(msg)
-        raise exceptions.UnknownHWStatusException(msg)
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
 def check_tokens():
     """Проверяет доступность переменных окружения."""
-    return all([TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, PRACTICUM_TOKEN])
+    if all([TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, PRACTICUM_TOKEN]):
+        return True
 
 
 def main():
@@ -130,7 +126,7 @@ def main():
                 previous_error = str(e)
                 send_message(bot, e)
             logger.error(e)
-            time.sleep(RETRY_TIME)
+            time.sleep(TELEGRAM_RETRY_TIME)
             continue
         try:
             homeworks = check_response(response)
@@ -142,7 +138,7 @@ def main():
             else:
                 logger.debug('Обновления статуса нет')
 
-            time.sleep(RETRY_TIME)
+            time.sleep(TELEGRAM_RETRY_TIME)
 
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
@@ -150,7 +146,7 @@ def main():
                 previous_error = str(error)
                 send_message(bot, message)
             logger.error(message)
-            time.sleep(RETRY_TIME)
+            time.sleep(TELEGRAM_RETRY_TIME)
 
 
 if __name__ == '__main__':
