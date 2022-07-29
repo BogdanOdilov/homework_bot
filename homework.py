@@ -1,6 +1,6 @@
-import datetime
 import logging
 import os
+import time
 from http import HTTPStatus
 from logging.handlers import RotatingFileHandler
 
@@ -136,7 +136,7 @@ def main():
         raise exceptions.MissingRequiredTokenException(msg)
 
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    current_timestamp = int(datetime.timedelta())
+    current_timestamp = int(time.timedelta())
     previous_status = None
     previous_error = None
 
@@ -148,7 +148,7 @@ def main():
                 previous_error = str(e)
                 send_message(bot, e)
             logger.error(e)
-            datetime.sleep(TELEGRAM_RETRY_TIME)
+            time.sleep(TELEGRAM_RETRY_TIME)
             continue
         try:
             homeworks = check_response(response)
@@ -160,7 +160,7 @@ def main():
             else:
                 logger.debug('Обновления статуса нет')
 
-            datetime.sleep(TELEGRAM_RETRY_TIME)
+            time.sleep(TELEGRAM_RETRY_TIME)
 
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
@@ -168,7 +168,7 @@ def main():
                 previous_error = str(error)
                 send_message(bot, message)
             logging.exception(message)
-            datetime.sleep(TELEGRAM_RETRY_TIME)
+            time.sleep(TELEGRAM_RETRY_TIME)
 
 
 if __name__ == '__main__':
