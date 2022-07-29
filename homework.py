@@ -58,24 +58,27 @@ def send_message(bot, message):
         logger.error('Сбой при отправке сообщения в чат')
 
 
-def get_api_answer(current_timestamp):
-    """Делает запрос к единственному эндпоинту API-сервиса.
-    В случае успешного запроса должна вернуть ответ API,
-    преобразовав его из формата JSON к типам данных Python.
-    """
-    timestamp = current_timestamp
-    params = {'from_date': timestamp}
-    try:
-        response = requests.get(ENDPOINT, headers=HEADERS, params=params)
-    except Exception as error:
-        raise Exception(f'Ошибка при запросе к основному API: {error}')
-    if response.status_code != HTTPStatus.OK:
-        status_code = response.status_code
-        logging.error(f'Ошибка {status_code}')
-    try:
-        return response.json()
-    except ValueError:
-        logger.error('Ошибка парсинга ответа из формата json')
+def get_api_answer(current_timestamp): 
+
+    """Делает запрос к единственному эндпоинту API-сервиса. 
+    В случае успешного запроса должна вернуть ответ API, 
+    преобразовав его из формата JSON к типам данных Python. 
+    """ 
+    timestamp = current_timestamp 
+    params = {'from_date': timestamp} 
+    try: 
+        response = requests.get(ENDPOINT, headers=HEADERS, params=params) 
+    except Exception as error: 
+        logging.error(f'Ошибка при запросе к основному API: {error}') 
+        raise Exception(f'Ошибка при запросе к основному API: {error}') 
+    if response.status_code != HTTPStatus.OK: 
+        status_code = response.status_code 
+        logging.error(f'Ошибка {status_code}') 
+        raise Exception(f'Ошибка {status_code}') 
+    try: 
+        return response.json() 
+    except ValueError: 
+        logger.error('Ошибка парсинга ответа из формата json') 
         raise ValueError('Ошибка парсинга ответа из формата json')
 
 
