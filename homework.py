@@ -1,7 +1,8 @@
+import datetime
 import logging
 import os
-import time
 from http import HTTPStatus
+from logging.handlers import RotatingFileHandler
 
 import requests
 import telegram
@@ -10,7 +11,27 @@ from dotenv import load_dotenv
 import exceptions
 
 load_dotenv()
+logging.basicConfig(
+    format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
+    level=logging.INFO,
+    filename='main.log',
+    encoding='UTF-8',
+    filemode='w'
+)
 
+
+logger = logging.getLogger(__name__)
+handler = RotatingFileHandler('my_logger.log',
+                              encoding='UTF-8',
+                              maxBytes=50000000,
+                              backupCount=5
+                              )
+logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
+formatter = logging.Formatter(
+    '%(asctime)s, %(levelname)s, %(message)s, %(funcName)s, %(lineno)s'
+)
+handler.setFormatter(formatter)
 
 PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
@@ -26,15 +47,6 @@ HOMEWORK_VERDICTS = {
     'reviewing': 'Работа взята на проверку ревьюером.',
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
-
-logging.basicConfig(
-    format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
-    level=logging.INFO,
-)
-
-logger = logging.getLogger(__name__)
-handler = logging.StreamHandler()
-logger.addHandler(handler)
 
 
 def send_message(bot, message):
@@ -56,12 +68,10 @@ def get_api_answer(current_timestamp):
     try:
         response = requests.get(ENDPOINT, headers=HEADERS, params=params)
     except Exception as error:
-        logging.error(f'Ошибка при запросе к основному API: {error}')
         raise Exception(f'Ошибка при запросе к основному API: {error}')
     if response.status_code != HTTPStatus.OK:
         status_code = response.status_code
         logging.error(f'Ошибка {status_code}')
-        raise Exception(f'Ошибка {status_code}')
     try:
         return response.json()
     except ValueError:
@@ -71,19 +81,23 @@ def get_api_answer(current_timestamp):
 
 def check_response(response):
     """Проверяет ответ API на корректность."""
-    if type(response) is not dict:
+    if isinstance(response) is not dict:
         raise TypeError('Ответ API отличен от словаря')
     try:
         homeworks_list = response['homeworks']
-    except KeyError:
-        logger.error('Ошибка словаря по ключу homeworks')
-        raise KeyError('Ошибка словаря по ключу homeworks')
-    try:
-        homework = homeworks_list[0]
-    except IndexError:
-        logger.error('Список домашних работ пуст')
-        raise IndexError('Список домашних работ пуст')
-    return homework
+    except KeyError as e:
+        msg = f'Ошибка доступа по ключу homeworks: {e}'
+        logger.error(msg)
+        raise exceptions.CheckResponseException(msg)
+    if len(homeworks_list) == 0:
+        msg = 'За последнее время нет домашек'
+        logger.error(msg)
+        raise exceptions.CheckResponseException(msg)
+    if not isinstance(homeworks_list, list):
+        msg = 'В ответе API домашки представлены не списком'
+        logger.error(msg)
+        raise exceptions.CheckResponseException(msg)
+    return homeworks_list
 
 
 def parse_status(homework):
@@ -102,8 +116,16 @@ def parse_status(homework):
 
 def check_tokens():
     """Проверяет доступность переменных окружения."""
-    if all([TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, PRACTICUM_TOKEN]):
-        return True
+    tokens = {
+        'practicum_token': PRACTICUM_TOKEN,
+        'telegram_token': TELEGRAM_TOKEN,
+        'telegram_chat_id': TELEGRAM_CHAT_ID,
+    }
+    for key, value in tokens.items():
+        if value is None:
+            logging.error(f'{key} отсутствует')
+            return False
+    return True
 
 
 def main():
@@ -114,7 +136,7 @@ def main():
         raise exceptions.MissingRequiredTokenException(msg)
 
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    current_timestamp = int(time.time() - 604800)
+    current_timestamp = int(datetime.timedelta())
     previous_status = None
     previous_error = None
 
@@ -126,7 +148,7 @@ def main():
                 previous_error = str(e)
                 send_message(bot, e)
             logger.error(e)
-            time.sleep(TELEGRAM_RETRY_TIME)
+            datetime.sleep(TELEGRAM_RETRY_TIME)
             continue
         try:
             homeworks = check_response(response)
@@ -138,15 +160,15 @@ def main():
             else:
                 logger.debug('Обновления статуса нет')
 
-            time.sleep(TELEGRAM_RETRY_TIME)
+            datetime.sleep(TELEGRAM_RETRY_TIME)
 
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             if previous_error != str(error):
                 previous_error = str(error)
                 send_message(bot, message)
-            logger.error(message)
-            time.sleep(TELEGRAM_RETRY_TIME)
+            logging.exception(message)
+            datetime.sleep(TELEGRAM_RETRY_TIME)
 
 
 if __name__ == '__main__':
