@@ -81,7 +81,7 @@ def get_api_answer(current_timestamp):
 
 def check_response(response):
     """Проверяет ответ API на корректность."""
-    if isinstance(response) is not dict:
+    if not isinstance(response, dict):
         raise TypeError('Ответ API отличен от словаря')
     try:
         homeworks_list = response['homeworks']
